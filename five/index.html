@@ -1,0 +1,308 @@
+<body>
+	<canvas id="glcanvas" width="640" height="480">
+		Your browser doesn't appear to support the <code>&lt;canvas&gt;</code>
+	element.
+	</canvas>
+</body>
+ <script type="text/javascript" src="https://webglfundamentals.org/webgl/resources/webgl-utils.js"></script>
+<script id="2d-vertex-shader" type="x-shader/x-vertex">
+attribute vec2 a_position;
+
+attribute vec2 a_texCoord;
+
+uniform vec2 u_resolution;
+
+varying vec2 v_texCoord;
+
+uniform float u_flipY;
+
+void main() {
+	vec2 zeroToOne = a_position / u_resolution;
+	vec2 zeroToTwo = zeroToOne * 2.0;
+	vec2 clipSpace = zeroToTwo - 1.0;
+	gl_Position = vec4(clipSpace * vec2(1, u_flipY), 0, 1);	
+	v_texCoord = a_texCoord;
+}
+
+</script>
+
+<script id="2d-fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+
+uniform sampler2D u_image;
+uniform vec2 u_textureSize;
+uniform float u_kernel[9];
+uniform float u_kernelWeight;
+
+varying vec2 v_texCoord;
+
+
+void main() {
+	vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+	vec4 colorSum  =
+     texture2D(u_image, v_texCoord + onePixel * vec2(-1, -1)) * u_kernel[0] +
+     texture2D(u_image, v_texCoord + onePixel * vec2( 0, -1)) * u_kernel[1] +
+     texture2D(u_image, v_texCoord + onePixel * vec2( 1, -1)) * u_kernel[2] +
+     texture2D(u_image, v_texCoord + onePixel * vec2(-1,  0)) * u_kernel[3] +
+     texture2D(u_image, v_texCoord + onePixel * vec2( 0,  0)) * u_kernel[4] +
+     texture2D(u_image, v_texCoord + onePixel * vec2( 1,  0)) * u_kernel[5] +
+     texture2D(u_image, v_texCoord + onePixel * vec2(-1,  1)) * u_kernel[6] +
+     texture2D(u_image, v_texCoord + onePixel * vec2( 0,  1)) * u_kernel[7] +
+     texture2D(u_image, v_texCoord + onePixel * vec2( 1,  1)) * u_kernel[8] ;
+    gl_FragColor = vec4((colorSum / u_kernelWeight).rgb, 1.00);
+}
+</script>
+
+<script type="text/javascript">
+	var canvas = document.getElementById('glcanvas')
+	var gl = canvas.getContext('webgl')
+	webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+	function createShader(gl, type, source) {
+		var shader = gl.createShader(type);
+		gl.shaderSource(shader, source);
+		gl.compileShader(shader);
+		var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+		if (success) {
+			return shader;
+		}
+		console.log(gl.getShaderInfoLog(shader));
+		gl.deleteShader(shader);
+	}
+
+	var vertexShaderSource = document.getElementById("2d-vertex-shader").text;
+	var fragmentShaderSource = document.getElementById("2d-fragment-shader").text;
+
+	var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+	var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+	function createProgram(gl, vertexShader, fragmentShader) {
+		var program = gl.createProgram();
+		gl.attachShader(program, vertexShader);
+		gl.attachShader(program, fragmentShader);
+		gl.linkProgram(program);
+		var success = gl.getProgramParameter(program, gl.LINK_STATUS);
+		if (success) {
+			return program;
+		}
+		console.log(gl.getProgramInfoLog(program));
+		gl.deleteProgram(program);
+	}
+
+	function setRectangle(gl, x, y, width, height) {
+		var x1 = x;
+		var x2 = x + width;
+		var y1 = y;
+		var y2 = y + height;
+
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+				x1, y1,
+				x2, y1,
+				x1, y2,
+				x1, y2,
+				x2, y1,
+				x2, y2
+			]), gl.STATIC_DRAW);
+	}
+
+	function randomInt(range) {
+		return Math.floor(Math.random() * range);
+	}
+	
+	function main() {
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+		gl.clearColor(0, 0, 0, 0);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		
+		var image = new Image();
+	  	requestCORSIfNotSameOrigin(image, "https://webglfundamentals.org/webgl/resources/leaves.jpg")
+  		image.src = "https://webglfundamentals.org/webgl/resources/leaves.jpg";
+  		image.onload = function() {
+			render(image);
+		}
+	}
+
+	function render(image) {
+		// compile vertex and fragment shaders
+		var program = createProgram(gl, vertexShader, fragmentShader);
+		gl.useProgram(program);
+		
+		// set resolution to be canvas height and canvas width
+		var resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
+		gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+
+		// set texture size as image width and image height
+		var textureSizeLocation = gl.getUniformLocation(program, 'u_textureSize');
+		gl.uniform2f(textureSizeLocation, image.width, image.height);
+
+
+		// Feed tex coords
+		var texCoordBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+				0.0, 0.0,
+				1.0, 0.0,
+				0.0, 1.0,
+				0.0, 1.0,
+				1.0, 0.0,
+				1.0, 1.0]), gl.STATIC_DRAW);
+		var texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+		gl.enableVertexAttribArray(texCoordLocation);
+		gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+		var originalImageTexture = createAndSetupTexture(gl)
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+		var textures = [];
+		var framebuffers = [];
+
+		for(var ii = 0; ii < 2; ++ii) {
+		    var texture = createAndSetupTexture(gl);
+		    textures.push(texture);
+
+		    // make the texture the same size as the image
+		    gl.texImage2D(
+		        gl.TEXTURE_2D, 0, gl.RGBA, image.width, image.height, 0,
+		        gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+		    // Create a framebuffer
+		    var fbo = gl.createFramebuffer();
+		    framebuffers.push(fbo);
+		    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+		    // Attach a texture to it.
+		    gl.framebufferTexture2D(
+		        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+		}
+
+		var kernels = {
+			normal: [
+				0, 0, 0,
+				0, 1, 0,
+				0, 0, 0
+			],
+			gaussianBlur: [
+				0.045, 0.122, 0.045,
+				0.122, 0.332, 0.122,
+				0.045, 0.122, 0.045
+			],
+			unsharpen: [
+				-1, -1, -1,
+				-1,  9, -1,
+				-1, -1, -1
+			],
+			emboss: [
+				-2, -1, 0,
+				-1,  1, 1,
+				 0,  1, 2
+			]
+		}
+		var effectsToApply = [
+			"gaussianBlur",
+			"unsharpen",
+			"emboss",
+			"gaussianBlur",
+			"gaussianBlur"
+		]
+
+
+
+		var flipYLocation = gl.getUniformLocation(program, 'u_flipY');
+		gl.uniform1f(flipYLocation, 1);
+
+		var kernelLocation = gl.getUniformLocation(program, 'u_kernel[0]');
+		var kernelWeightLocation = gl.getUniformLocation(program, 'u_kernelWeight');
+
+		gl.bindTexture(gl.TEXTURE_2D, originalImageTexture);
+
+		// draw rectangle on which rendering happens
+
+		var positionBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+
+		var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+		gl.enableVertexAttribArray(positionAttributeLocation);
+		var size = 2;
+		var type = gl.FLOAT;
+		var normalize = false;
+		var stride = 0;
+		var offset = 0;
+		gl.vertexAttribPointer(positionAttributeLocation, size, type, normalize, stride, offset);
+		gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+	  	setRectangle(gl, 0, 0, image.width, image.height);
+	  	var primitiveType = gl.TRIANGLES;
+	  	var offset = 0;
+	  	var count = 6;
+	  	gl.drawArrays(primitiveType, offset, count);
+
+		for (var ii = 0; ii < effectsToApply.length; ++ii) {
+			var framebuffer = framebuffers[ii % 2];
+			var effectToApply = effectsToApply[ii];
+			setFrameBuffer(framebuffer, image.width, image.height, resolutionUniformLocation);
+			drawWithKernel(effectToApply, kernels, kernelLocation, kernelWeightLocation);
+			var texture =  textures[ii % 2];
+			gl.bindTexture(gl.TEXTURE_2D, texture);
+		}
+
+		gl.uniform1f(flipYLocation, -1);
+
+		setFrameBuffer(null, canvas.width, canvas.height, resolutionUniformLocation);
+		
+		drawWithKernel("normal", kernels, kernelLocation, kernelWeightLocation);
+
+	}
+
+	function setFrameBuffer(fbo, width, height, resolutionLocation) {
+		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+		gl.uniform2f(resolutionLocation, width, height);
+		gl.viewport(0, 0, width, height);
+	}
+
+	function drawWithKernel(name, kernels, kernelLocation, kernelWeightLocation) {
+		gl.uniform1fv(kernelLocation, kernels[name]);
+		gl.uniform1f(kernelWeightLocation, computeKernelWeight(kernels[name]));
+		gl.drawArrays(gl.TRIANGLES, 0, 6);
+	}
+
+	function createAndSetupTexture(gl) {
+		var texture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		return texture
+	}
+	
+	function requestCORSIfNotSameOrigin(img, url) {
+	  if ((new URL(url)).origin !== window.location.origin) {
+	    img.crossOrigin = "";
+	  }
+	}
+
+	function setRectangle(gl, x, y, width, height) {
+		var x1 = x;
+		var x2 = x + width;
+		var y1 = y;
+		var y2 = y + height;
+
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+				x1, y1,
+				x2, y1,
+				x1, y2,
+				x1, y2,
+				x2, y1,
+				x2, y2
+			]), gl.STATIC_DRAW);
+	}
+
+	function computeKernelWeight(kernel) {
+		var weight = kernel.reduce(function(prev, curr) {
+			return prev + curr;
+		});
+		return weight <= 0 ? 1: weight
+	}
+	main();
+</script>
+
